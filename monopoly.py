@@ -6,6 +6,10 @@ prop_values = {1:60, 3:60, 5:200, 6:100, 8:100, 9:120, 11:140, 12:140, 13:150,
 	14:160, 15:200, 16:180, 18:180, 19:200,	21:220, 23:220, 24:240, 25:200,
 	26:260, 27:260, 28:150, 29:280, 31:300, 32:300, 34:320, 35:200, 37:350,
 	39:400}
+monopolies = {"brown":(1, 3), "rail":(5, 15, 25, 35), "lblue":(6, 8, 9),
+	"pink":(11, 13, 14), "util":(12, 28), "orange":(16, 18, 19),
+	"red":(21, 23, 24), "yellow":(25, 27, 29), "green":(31, 32, 34),
+	"dblue":(37, 39)}
 
 def to_buy(pd, odlist):
 	"""
@@ -40,7 +44,8 @@ class Property:
 
 class Data:
 
-	def __init__(self):
+	def __init__(self, number):
+		self.number = number
 		self.pos = 0 # position
 		self.cash = 1500
 		self.props = [] # properties
@@ -49,6 +54,7 @@ class Data:
 		self.jail = 0 # turns left in jail; 0 if not in jail
 		self.bankrupt = False
 		self.jail_free = 0
+		self.monopolies = set()
 
 	def sub_cash(self, amount, odlist):
 		if self.cash >= amount:
@@ -110,6 +116,13 @@ class Data:
 		elif pd.pos == 39:
 			rent = 50
 
+		for m in self.monopolies:
+			if pd.pos in monopolies[m]:
+				rent *= 2
+				break
+
+		print("Player " + str(pd.number) + " paying $" + str(rent) +
+			" to Player " + str(self.number))
 		pd.sub_cash(rent, odlist)
 		if pd.bankrupt:
 			pd.lose(True, lose_to=self)
@@ -131,11 +144,27 @@ class Data:
 				p.owned = False
 		else:
 			lose_to.props += self.props
+			lose_to.check_monopolies()
 			for p in self.props:
 				lose_to.net += p.value
 			self.props = []
+			self.monopolies = []
 		players.remove(self)
 		pprint(self)
+
+	def check_monopolies(self):
+		positions = []
+		for p in self.props:
+			positions.append(p.pos)
+
+		for m in monopolies.keys():
+			mono = True
+			for p in monopolies[m]:
+				if p not in positions:
+					mono = False
+					break
+			if mono:
+				self.monopolies.add(m)
 
 def move(pd, odlist, num_doubles):
 	"""
@@ -162,7 +191,7 @@ def move(pd, odlist, num_doubles):
 		old_pos = pd.pos
 		pd.pos = (pd.pos + sum(dice)) % 40
 		if pd.pos < old_pos:
-			pd.add_cash(2) # TODO: GO should be 200, not 2
+			pd.add_cash(20) # TODO: GO should be 200, not 20
 		eval_pos(pd, odlist, dice)
 		if pd.jail or pd.bankrupt:
 			return None
@@ -289,6 +318,7 @@ def buy(pd, odlist):
 	properties[pd.pos].owned = True
 	pd.props.append(properties[pd.pos])
 	pd.cash -= properties[pd.pos].value
+	pd.check_monopolies()
 
 def to_trade_or_mortgage(pd, odlist):
 	# TODO
@@ -305,6 +335,7 @@ def trade(pd, odlist):
 	return traded
 
 def pprint(pd):
+	print("Player " + str(pd.number))
 	print("position:\t" + str(pd.pos))
 	print("cash:\t\t" + str(pd.cash))
 	keys = []
@@ -312,6 +343,7 @@ def pprint(pd):
 		keys.append(prop.pos)
 	keys.sort()
 	print("properties:\t" + str(keys))
+	print("monopolies:\t" + str(pd.monopolies))
 	print("net worth:\t" + str(pd.net))
 	print("jail no.:\t" + str(pd.jail))
 	print("bankrupt:\t" + str(pd.bankrupt))
@@ -335,7 +367,6 @@ def play():
 			turn = (turn + 1) % len(players)
 		else:
 			turn %= len(players)
-		print(turn)
 		pprint(players[turn])
 	# print(players)
 
@@ -346,7 +377,7 @@ if __name__ == "__main__":
 	num_players = 4
 
 	for i in range(num_players):
-		player = Data()
+		player = Data(i + 1)
 		players.append(player)
 
 	for pos in prop_values.keys():
