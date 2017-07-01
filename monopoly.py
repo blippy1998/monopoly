@@ -103,6 +103,9 @@ class Data:
 		self.add_cash(int(properties[pd.pos].value * .1) - 2)
 
 	def lose(self, to_player, **kwargs):
+		global players
+		print("to_player: " + str(to_player))
+		self.bankrupt = True
 		if not to_player:
 			assert(len(kwargs) == 0)
 		else:
@@ -114,7 +117,10 @@ class Data:
 				p.owned = False
 		else:
 			lose_to.props += self.props
-		del self
+			for p in self.props:
+				lose_to.net += p.value
+			self.props = []
+		players.remove(self)
 
 def move(pd, odlist, num_doubles):
 	"""
@@ -144,7 +150,6 @@ def move(pd, odlist, num_doubles):
 			pd.add_cash(2) # TODO: GO should be 200, not 2
 		eval_pos(pd, odlist)
 		if pd.jail or pd.bankrupt:
-			players.remove(pd)
 			return None
 		if doubles:
 			move(pd, odlist, num_doubles)
@@ -208,6 +213,8 @@ def roll_dice():
 	a = random.randint(1, 6)
 	b = random.randint(1, 6)
 
+	print(a == b)
+
 	return (a, b)
 
 def income_tax(pd, odlist):
@@ -222,7 +229,6 @@ def income_tax(pd, odlist):
 		pd.sub_cash(200, odlist)
 	if pd.bankrupt:
 		pd.lose(False)
-		players.remove(pd)
 
 def luxury_tax(pd, odlist):
 	global players
@@ -233,7 +239,6 @@ def luxury_tax(pd, odlist):
 		pd.sub_cash(100, odlist)
 	if pd.bankrupt:
 		pd.lose(False)
-		players.remove(pd)
 
 def go_jail(pd):
 	pd.pos = 10
