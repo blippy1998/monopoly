@@ -87,7 +87,7 @@ class Data:
 		self.cash -= int(prop.value * 1.1)
 		self.net -= int(prop.value * .1)
 
-	def rent_collect(self, pd):
+	def rent_collect(self, pd, dice):
 		global players
 		assert(properties[pd.pos] in self.props)
 
@@ -96,15 +96,29 @@ class Data:
 			if p != pd:
 				odlist.append(p)
 
-		pd.sub_cash(int(properties[pd.pos].value * .1) - 2, odlist)
+		if pd.pos != 4 and pd.pos % 5 != 0 and pd.pos != 12 and pd.pos != 28 \
+			and pd.pos != 37 and pd.pos != 39:
+			rent = int(properties[pd.pos].value * .1) - 4
+		elif pd.pos == 4:
+			rent = 4
+		elif pd.pos % 5 == 0:
+			rent = 25
+		elif pd.pos == 12 or pd.pos == 28:
+			rent = 4 * sum(dice)
+		elif pd.pos == 37:
+			rent = 35
+		elif pd.pos == 39:
+			rent = 50
+
+		pd.sub_cash(rent, odlist)
 		if pd.bankrupt:
 			pd.lose(True, lose_to=self)
 			return None
-		self.add_cash(int(properties[pd.pos].value * .1) - 2)
+		self.add_cash(rent)
 
 	def lose(self, to_player, **kwargs):
 		global players
-		print("to_player: " + str(to_player))
+		# print("to_player: " + str(to_player))
 		self.bankrupt = True
 		if not to_player:
 			assert(len(kwargs) == 0)
@@ -121,6 +135,7 @@ class Data:
 				lose_to.net += p.value
 			self.props = []
 		players.remove(self)
+		pprint(self)
 
 def move(pd, odlist, num_doubles):
 	"""
@@ -148,7 +163,7 @@ def move(pd, odlist, num_doubles):
 		pd.pos = (pd.pos + sum(dice)) % 40
 		if pd.pos < old_pos:
 			pd.add_cash(2) # TODO: GO should be 200, not 2
-		eval_pos(pd, odlist)
+		eval_pos(pd, odlist, dice)
 		if pd.jail or pd.bankrupt:
 			return None
 		if doubles:
@@ -170,7 +185,7 @@ def props_to_mortgage(pd, amount):
 		pd.bankrupt = True
 	return ptm
 
-def eval_pos(pd, odlist):
+def eval_pos(pd, odlist, dice):
 	"""
 	pd is the player data
 
@@ -188,7 +203,7 @@ def eval_pos(pd, odlist):
 			if properties[pd.pos].owned:
 				for od in odlist:
 					if properties[pd.pos] in od.props:
-						od.rent_collect(pd)
+						od.rent_collect(pd, dice)
 						break
 
 	elif pd.pos == 2 or pd.pos == 17 or pd.pos == 33:
@@ -213,7 +228,7 @@ def roll_dice():
 	a = random.randint(1, 6)
 	b = random.randint(1, 6)
 
-	print(a == b)
+	# print(a == b)
 
 	return (a, b)
 
@@ -262,7 +277,7 @@ def jail(pd, odlist):
 		if dice[0] == dice[1] or pd.jail == 0:
 			pd.jail = 0
 			pd.pos += dice[0] + dice[1]
-			eval_pos(pd, odlist)
+			eval_pos(pd, odlist, dice)
 		else:
 			pd.jail -= 1
 
@@ -295,6 +310,7 @@ def pprint(pd):
 	keys = []
 	for prop in pd.props:
 		keys.append(prop.pos)
+	keys.sort()
 	print("properties:\t" + str(keys))
 	print("net worth:\t" + str(pd.net))
 	print("jail no.:\t" + str(pd.jail))
@@ -318,10 +334,10 @@ def play():
 		if(len(players) == length):
 			turn = (turn + 1) % len(players)
 		else:
-			turn = 0 # TODO: this is a sloppy solution
+			turn %= len(players)
 		print(turn)
 		pprint(players[turn])
-	print(players)
+	# print(players)
 
 if __name__ == "__main__":
 	v2007 = True
