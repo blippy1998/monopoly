@@ -41,6 +41,7 @@ class Property:
 		self.value = prop_values[pos]
 		self.owned = False
 		self.mortgaged = False
+		self.houses = 0
 
 class Data:
 
@@ -49,18 +50,29 @@ class Data:
 		self.pos = 0 # position
 		self.cash = 1500
 		self.props = [] # properties
+		self.rcprops = [] # rent-collecting (i.e. unmortgaged) properties
+		self.mprops = [] # mortgaged properties
 		self.asset_value = 0
 		self.net = 1500 # net worth
 		self.jail = 0 # turns left in jail; 0 if not in jail
 		self.bankrupt = False
-		self.jail_free = 0
-		self.monopolies = set()
+		self.jail_free = 0 # number of GOJF cards
+		self.monopolies = set() # which monopolies the player owns
 
 	def sub_cash(self, amount, odlist):
 		if self.cash >= amount:
 			self.cash -= amount
 			self.net -= amount
 		else:
+			enough = False
+			for p in self.rcprops:
+				while not enough:
+					possible = self.sell_house(p)
+					if self.cash > amount:
+						enough = True
+					if not possible:
+						break
+
 			mortgage = to_trade_or_mortgage(self, odlist)
 			if not mortgage:
 				trade(self, odlist)
@@ -78,24 +90,40 @@ class Data:
 	def mortgage(self, prop):
 		assert(prop.owned)
 		assert(prop in self.props)
-		assert(prop.mortgaged == False)
+		assert(not prop.mortgaged)
 
 		prop.mortgaged = True
-		self.cash += prop.value
+		self.mprops.append(prop)
+		self.rcprops.remove(prop)
+		self.cash += prop.value // 2
+		# this is if you consider mortgaged property as not part of net worth
+		# self.net -= prop.value // 2
 
 	def unmortgage(self, prop):
 		assert(prop.owned)
 		assert(prop in self.props)
-		assert(prop.mortgaged == True)
+		assert(prop.mortgaged)
 		assert(self.cash >= int(prop.value * 1.1))
 
 		prop.mortgaged = False
-		self.cash -= int(prop.value * 1.1)
-		self.net -= int(prop.value * .1)
+		self.mprops.remove(prop)
+		self.rcprops.append(prop)
+		self.cash -= int(prop.value // 2 * 1.1)
+		self.net -= int(prop.value // 2 * .1)
+		# this is if you consider mortgaged property as not part of net worth
+		# self.net += int(prop.value // 2)
+
+		self.check_monopolies()
 
 	def rent_collect(self, pd, dice):
 		global players
-		assert(properties[pd.pos] in self.props)
+
+		prop = properties[pd.pos]
+
+		assert(prop in self.props)
+
+		if prop not in self.rcprops:
+			return None
 
 		odlist = []
 		for p in players:
@@ -104,7 +132,7 @@ class Data:
 
 		if pd.pos != 4 and pd.pos % 5 != 0 and pd.pos != 12 and pd.pos != 28 \
 			and pd.pos != 37 and pd.pos != 39:
-			rent = int(properties[pd.pos].value * .1) - 4
+			rent = prop.value // 10 - 4
 		elif pd.pos == 4:
 			rent = 4
 		elif pd.pos % 5 == 0:
@@ -120,6 +148,8 @@ class Data:
 			if pd.pos in monopolies[m]:
 				rent *= 2
 				break
+
+		rent *= 3 ** prop.houses
 
 		print("Player " + str(pd.number) + " paying $" + str(rent) +
 			" to Player " + str(self.number))
@@ -143,18 +173,23 @@ class Data:
 				p.mortgaged = False
 				p.owned = False
 		else:
+			lose_to.cash += self.cash
 			lose_to.props += self.props
+			lose_to.mprops += self.mprops
+			lose_to.rcprops += self.rcprops
 			lose_to.check_monopolies()
 			for p in self.props:
 				lose_to.net += p.value
 			self.props = []
-			self.monopolies = []
+			self.mprops = []
+			self.rcprops = []
+			self.check_monopolies()
 		players.remove(self)
 		pprint(self)
 
 	def check_monopolies(self):
 		positions = []
-		for p in self.props:
+		for p in self.rcprops:
 			positions.append(p.pos)
 
 		for m in monopolies.keys():
@@ -165,6 +200,50 @@ class Data:
 					break
 			if mono:
 				self.monopolies.add(m)
+
+	def buy_house(self, prop):
+		assert(prop not in unownables)
+		assert(prop in self.rcprops)
+		assert(prop.houses >= 0)
+		assert(prop.houses <= 5)
+
+		if prop.houses == 5:
+			return False
+
+		in_monopoly = False
+		for m in self.monopolies:
+			if m == "rail" or m == "util":
+				continue
+			if prop.pos in monopolies[m]:
+				in_monopoly = True
+				break
+
+		if not in_monopoly:
+			return False
+
+		cost = 50 * (prop.pos // 10 + 1)
+
+		if self.cash >= cost:
+			prop.houses += 1
+			self.cash -= cost
+			print("buying house")
+			return True
+
+		return False
+
+	def sell_house(self, prop):
+		assert(prop not in unownables)
+		assert(prop in self.rcprops)
+		assert(prop.houses >= 0)
+		assert(prop.houses <= 5)
+
+		if prop.houses == 0:
+			return False
+
+		sale_price = 25 * (prop.pos // 10 + 1) # half value
+		prop.houses -= 1
+		self.cash += sale_price
+		self.net -= sale_price
 
 def move(pd, odlist, num_doubles):
 	"""
@@ -191,7 +270,7 @@ def move(pd, odlist, num_doubles):
 		old_pos = pd.pos
 		pd.pos = (pd.pos + sum(dice)) % 40
 		if pd.pos < old_pos:
-			pd.add_cash(20) # TODO: GO should be 200, not 20
+			pd.add_cash(200) # TODO: GO should be 200, not 20
 		eval_pos(pd, odlist, dice)
 		if pd.jail or pd.bankrupt:
 			return None
@@ -200,12 +279,24 @@ def move(pd, odlist, num_doubles):
 	else:
 		jail(pd, odlist)
 
+	for p in pd.mprops:
+		if pd.cash >= int(p.value * 1.1):
+			pd.unmortgage(p)
+		else:
+			break
+
+	for p in pd.rcprops:
+		while True:
+			possible = pd.buy_house(p)
+			if not possible:
+				break
+
+	pprint(pd)
+
 def props_to_mortgage(pd, amount):
 	ptm = [] # "props to mortgage"
 	total = 0
-	for p in pd.props:
-		if p.mortgaged:
-			continue
+	for p in pd.rcprops:
 		ptm.append(p)
 		total += p.value
 		if total > amount:
@@ -268,7 +359,7 @@ def income_tax(pd, odlist):
 		if pd.net >= 2000:
 			pd.sub_cash(200, odlist)
 		else:
-			pd.sub_cash(int(pd.cash * .1), odlist)
+			pd.sub_cash(pd.cash // 10, odlist)
 	else:
 		pd.sub_cash(200, odlist)
 	if pd.bankrupt:
@@ -311,13 +402,16 @@ def jail(pd, odlist):
 			pd.jail -= 1
 
 def buy(pd, odlist):
-	assert(not properties[pd.pos].owned)
-	assert(properties[pd.pos] not in pd.props)
+	prop = properties[pd.pos]
+
+	assert(not prop.owned)
+	assert(prop not in pd.props)
 	assert(pd.cash >= prop_values[pd.pos])
 
-	properties[pd.pos].owned = True
-	pd.props.append(properties[pd.pos])
-	pd.cash -= properties[pd.pos].value
+	prop.owned = True
+	pd.props.append(prop)
+	pd.rcprops.append(prop)
+	pd.cash -= prop.value
 	pd.check_monopolies()
 
 def to_trade_or_mortgage(pd, odlist):
@@ -343,6 +437,16 @@ def pprint(pd):
 		keys.append(prop.pos)
 	keys.sort()
 	print("properties:\t" + str(keys))
+	rckeys = []
+	for prop in pd.rcprops:
+		rckeys.append(prop.pos)
+	rckeys.sort()
+	print("for rent:\t" + str(rckeys))
+	mkeys = []
+	for prop in pd.mprops:
+		mkeys.append(prop.pos)
+	mkeys.sort()
+	print("mortgaged:\t" + str(mkeys))
 	print("monopolies:\t" + str(pd.monopolies))
 	print("net worth:\t" + str(pd.net))
 	print("jail no.:\t" + str(pd.jail))
@@ -355,8 +459,9 @@ def play():
 	global players
 	global properties
 	turn = 0
+	turns = 0
 
-	while(len(players) > 1):
+	while turns < 1000 and len(players) > 1:
 		length = len(players)
 		odlist = []
 		for p in players:
@@ -367,14 +472,14 @@ def play():
 			turn = (turn + 1) % len(players)
 		else:
 			turn %= len(players)
-		pprint(players[turn])
+		turns += 1
 	# print(players)
 
 if __name__ == "__main__":
 	v2007 = True
 	players = []
 	properties = {}
-	num_players = 4
+	num_players = 2
 
 	for i in range(num_players):
 		player = Data(i + 1)
