@@ -1,0 +1,14 @@
+auctions
+	unbought property
+	houses/hotels
+building houses/hotels when it's not your turn
+chance and community chest
+GOJF cards
+even distribution of houses
+reverse selling of houses
+all decision-making
+	$50 GOJ fine
+	trading
+	buying
+	mortgaging
+	buying/selling houses
